@@ -5,9 +5,9 @@ sequence of QR codes on screen, filming that with a phone camera, and
 decoding the recorded video back into the original file.
 
 ```
-source machine                         phone                    destination machine
+  source machine                        phone                 destination machine
 ┌───────────────┐   flashes QR codes   ┌─────┐   video file    ┌───────────────┐
-│ encode <file> │ ───────────────────▶ │ cam │ ──────────────▶ │ decode <video>│
+│ encode <file> │ -------------------> │ cam │ --------------> │ decode <video>│
 └───────────────┘                      └─────┘                 └───────────────┘
 ```
 
