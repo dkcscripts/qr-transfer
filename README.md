@@ -100,6 +100,7 @@ Options:
 |---|---|---|
 | `-o`, `--output` | embedded filename | Output file path. If omitted, uses the original filename embedded in the QR metadata, written to the current directory. |
 | `--force` | off | Overwrite the output file if it already exists. |
+| `--decoder` | `opencv` | QR decoding backend(s) to use, comma-separated. See below. |
 
 The decoder scans every frame of the video, prints progress as chunks are
 found, and on success writes the reconstructed file after verifying its
@@ -108,7 +109,33 @@ SHA256 hash matches the original.
 If chunks are missing, it prints the missing chunk indices and exits with an
 error instead of writing a partial/corrupt file - re-record (e.g. hold the
 phone steadier, improve lighting, or increase `--duration-ms` on the encode
-side) and decode again.
+side) and decode again. It can also be worth retrying the same video with a
+different `--decoder` (see below) before re-recording.
+
+#### Decoding backends
+
+`--decoder` accepts a comma-separated list of backend names, tried on every
+frame with results merged:
+
+| Backend | Extra install | Notes |
+|---|---|---|
+| `opencv` (default) | none | Uses OpenCV's built-in `QRCodeDetector`. No extra dependency, but can miss a meaningful fraction of chunks on some recordings. |
+| `pyzbar` | `pip install pyzbar` | Wraps the ZBar library. Its native `zbar` shared library can be unavailable or misbehave in some locked-down/virtualized environments (e.g. VDI/Citrix sessions). |
+| `zxing` | `pip install zxing-cpp` | Python bindings for the ZXing-cpp C++ library, shipped as a self-contained wheel (no separate native library to locate at runtime). Often more robust than the other two. |
+
+Each backend module is only imported if it's actually requested, so the
+default `opencv` path never touches `pyzbar` or `zxing-cpp`, and picking one
+non-default backend doesn't import the other.
+
+```bash
+python qr_transfer.py decode recording.mp4 --decoder zxing
+python qr_transfer.py decode recording.mp4 --decoder pyzbar,zxing
+```
+
+If the default `opencv` decoder is missing a lot of chunks, try `zxing`
+first (self-contained, no native library concerns), or `pyzbar` if that's
+available in your environment, or combine several with a comma-separated
+list before resorting to re-recording.
 
 #### Supported video formats
 

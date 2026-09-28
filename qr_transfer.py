@@ -7,8 +7,10 @@ window (film it with a phone camera), and decode a video recording of that
 sequence back into the original file on another machine.
 
 Usage:
-    python qr_transfer.py encode <input_file> [--duration-ms 200] [--chunk-size 1200] [--window-size 800]
-    python qr_transfer.py decode <video_file> [-o OUTPUT] [--force]
+    python qr_transfer.py encode <input_file> [--duration-ms 200] [--chunk-size 1000]
+                                                [--window-size 800] [--countdown 5]
+                                                [--no-wait] [--info]
+    python qr_transfer.py decode <video_file> [-o OUTPUT] [--force] [--decoder opencv]
 """
 from __future__ import annotations
 
@@ -168,41 +170,124 @@ def cmd_encode(args: argparse.Namespace) -> int:
     window_name = "QR Transfer - Encode"
     cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
 
-    if not args.no_wait:
-        print("Window ready. Position your phone camera, start recording, then press ENTER in the window to begin (q/ESC to cancel).")
-        if not wait_for_enter_screen(args.window_size, window_name):
-            print("Aborted by user.")
-            cv2.destroyAllWindows()
-            return 1
+    try:
+        if not args.no_wait:
+            print("Window ready. Position your phone camera, start recording, then press ENTER in the window to begin (q/ESC to cancel).")
+            if not wait_for_enter_screen(args.window_size, window_name):
+                print("Aborted by user.")
+                return 1
 
-    if args.countdown > 0:
-        print(f"Starting in {args.countdown} seconds...")
-        countdown_screen(args.window_size, args.countdown, window_name)
+        if args.countdown > 0:
+            print(f"Starting in {args.countdown} seconds...")
+            countdown_screen(args.window_size, args.countdown, window_name)
 
-    start = time.time()
-    for idx, frame_bytes in enumerate(frames):
-        img = make_qr_image(frame_bytes, args.window_size)
-        cv2.imshow(window_name, img)
-        key = cv2.waitKey(args.duration_ms) & 0xFF
-        if key in (ord("q"), 27):  # q or ESC
-            print("Aborted by user.")
-            cv2.destroyAllWindows()
-            return 1
-        if (idx + 1) % 25 == 0 or (idx + 1) == len(frames):
-            print(f"  displayed {idx + 1}/{len(frames)} frames", end="\r", flush=True)
+        start = time.time()
+        for idx, frame_bytes in enumerate(frames):
+            img = make_qr_image(frame_bytes, args.window_size)
+            cv2.imshow(window_name, img)
+            key = cv2.waitKey(args.duration_ms) & 0xFF
+            if key in (ord("q"), 27):  # q or ESC
+                print("Aborted by user.")
+                return 1
+            if (idx + 1) % 25 == 0 or (idx + 1) == len(frames):
+                print(f"  displayed {idx + 1}/{len(frames)} frames", end="\r", flush=True)
 
-    elapsed = time.time() - start
-    print()
-    print(f"Done. Displayed {len(frames)} frames in {elapsed:.1f}s.")
-    cv2.destroyAllWindows()
-    return 0
+        elapsed = time.time() - start
+        print()
+        print(f"Done. Displayed {len(frames)} frames in {elapsed:.1f}s.")
+        return 0
+    except KeyboardInterrupt:
+        print()
+        print("Interrupted (Ctrl+C). Aborting cleanly.")
+        return 130
+    finally:
+        cv2.destroyAllWindows()
 
 
 # --------------------------------------------------------------------------
 # Decode
 # --------------------------------------------------------------------------
 
+def decode_qr_opencv(qr_detector, gray) -> list[str]:
+    try:
+        retval, decoded_infos, _points, _straight = qr_detector.detectAndDecodeMulti(gray)
+    except cv2.error:
+        retval, decoded_infos = False, []
+    if not retval:
+        single, _points, _straight = qr_detector.detectAndDecode(gray)
+        decoded_infos = [single] if single else []
+    return [text for text in decoded_infos if text]
+
+
+def decode_qr_pyzbar(zbar_decode, ZBarSymbol, gray) -> list[str]:
+    results = zbar_decode(gray, symbols=[ZBarSymbol.QRCODE])
+    texts = []
+    for result in results:
+        try:
+            texts.append(result.data.decode("ascii"))
+        except UnicodeDecodeError:
+            continue  # not one of our (base64, ASCII-only) frames
+    return texts
+
+
+def decode_qr_zxing(zxingcpp, gray) -> list[str]:
+    results = zxingcpp.read_barcodes(gray, formats=zxingcpp.BarcodeFormat.QRCode)
+    return [r.text for r in results if r.text]
+
+
+DECODER_NAMES = ("opencv", "pyzbar", "zxing")
+
+
+class DecoderSetupError(Exception):
+    pass
+
+
+def build_decoders(names: list[str]):
+    """Lazily set up the requested decoding backend(s).
+
+    Only imports third-party QR libraries (pyzbar, zxing-cpp) if they were
+    actually requested via --decoder, so the default 'opencv' path never
+    touches them. Returns a list of (name, decode_fn) pairs where decode_fn
+    takes a grayscale image and returns a list of decoded text strings.
+    """
+    decoders = []
+    for name in names:
+        if name == "opencv":
+            qr_detector = cv2.QRCodeDetector()
+            decoders.append(("opencv", lambda gray, d=qr_detector: decode_qr_opencv(d, gray)))
+        elif name == "pyzbar":
+            try:
+                from pyzbar.pyzbar import decode as zbar_decode, ZBarSymbol
+            except ImportError:
+                raise DecoderSetupError(
+                    "--decoder pyzbar requires the 'pyzbar' package (and its native zbar "
+                    "library). Install it with:\n  pip install pyzbar")
+            decoders.append(("pyzbar", lambda gray, zd=zbar_decode, zs=ZBarSymbol: decode_qr_pyzbar(zd, zs, gray)))
+        elif name == "zxing":
+            try:
+                import zxingcpp
+            except ImportError:
+                raise DecoderSetupError(
+                    "--decoder zxing requires the 'zxing-cpp' package. Install it with:\n"
+                    "  pip install zxing-cpp")
+            decoders.append(("zxing", lambda gray, zx=zxingcpp: decode_qr_zxing(zx, gray)))
+        else:
+            raise DecoderSetupError(
+                f"unknown decoder '{name}', expected one of: {', '.join(DECODER_NAMES)}")
+    return decoders
+
+
 def cmd_decode(args: argparse.Namespace) -> int:
+    requested = [n.strip().lower() for n in args.decoder.split(",") if n.strip()]
+    if not requested:
+        print("error: --decoder requires at least one backend name", file=sys.stderr)
+        return 1
+    try:
+        decoders = build_decoders(requested)
+    except DecoderSetupError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
     video_path = Path(args.video_file)
     if not video_path.is_file():
         print(f"error: video file not found: {video_path}", file=sys.stderr)
@@ -223,57 +308,62 @@ def cmd_decode(args: argparse.Namespace) -> int:
     chunks: dict[int, bytes] = {}
     frame_num = 0
     total_video_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or None
-    qr_detector = cv2.QRCodeDetector()
 
-    print(f"Scanning {video_path.name} ...")
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
-        frame_num += 1
+    print(f"Scanning {video_path.name} (decoder={','.join(name for name, _ in decoders)}) ...")
+    interrupted = False
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            frame_num += 1
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        try:
-            retval, decoded_infos, _points, _straight = qr_detector.detectAndDecodeMulti(gray)
-        except cv2.error:
-            retval, decoded_infos = False, []
-        if not retval:
-            single, _points, _straight = qr_detector.detectAndDecode(gray)
-            decoded_infos = [single] if single else []
-        for text in decoded_infos:
-            if not text:
-                continue
-            try:
-                raw = base64.b64decode(text, validate=True)
-            except (base64.binascii.Error, ValueError):
-                continue  # not one of our frames
-            parsed = unpack_frame(raw)
-            if parsed is None:
-                continue  # not one of our frames, or corrupted beyond CRC check
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            texts: list[str] = []
+            for _name, decode_fn in decoders:
+                texts.extend(decode_fn(gray))
+            for text in texts:
+                try:
+                    raw = base64.b64decode(text, validate=True)
+                except (base64.binascii.Error, ValueError):
+                    continue  # not one of our frames
+                parsed = unpack_frame(raw)
+                if parsed is None:
+                    continue  # not one of our frames, or corrupted beyond CRC check
 
-            if parsed["frame_type"] == FRAME_TYPE_META:
-                if metadata is None:
-                    try:
-                        metadata = json.loads(parsed["payload"].decode("utf-8"))
-                    except (UnicodeDecodeError, json.JSONDecodeError):
-                        continue
-                    print(f"  found metadata: {metadata['filename']} "
-                          f"({metadata['filesize']} bytes, {metadata['total_chunks']} chunks)")
-                continue
+                if parsed["frame_type"] == FRAME_TYPE_META:
+                    if metadata is None:
+                        try:
+                            metadata = json.loads(parsed["payload"].decode("utf-8"))
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            continue
+                        print(f"  found metadata: {metadata['filename']} "
+                              f"({metadata['filesize']} bytes, {metadata['total_chunks']} chunks)")
+                    continue
 
-            idx = parsed["frame_index"]
-            if idx not in chunks:
-                chunks[idx] = parsed["payload"]
-                found = len(chunks)
-                total = metadata["total_chunks"] if metadata else "?"
-                print(f"  chunk {idx} captured ({found}/{total})", end="\r", flush=True)
+                idx = parsed["frame_index"]
+                if idx not in chunks:
+                    chunks[idx] = parsed["payload"]
+                    found = len(chunks)
+                    total = metadata["total_chunks"] if metadata else "?"
+                    print(f"  chunk {idx} captured ({found}/{total})", end="\r", flush=True)
 
-        if total_video_frames:
-            if frame_num % 30 == 0:
-                print(f"  processed frame {frame_num}/{total_video_frames}", end="\r", flush=True)
-
-    cap.release()
+            if total_video_frames:
+                if frame_num % 30 == 0:
+                    print(f"  processed frame {frame_num}/{total_video_frames}", end="\r", flush=True)
+    except KeyboardInterrupt:
+        interrupted = True
+    finally:
+        cap.release()
     print()
+
+    if interrupted:
+        found = len(chunks)
+        total = metadata["total_chunks"] if metadata else "?"
+        print(f"Interrupted (Ctrl+C) after scanning {frame_num} frames "
+              f"({found}/{total} chunks captured so far). Aborting without writing output.",
+              file=sys.stderr)
+        return 130
 
     if metadata is None:
         print("error: metadata frame was never captured. Re-record the video (make sure "
@@ -342,10 +432,28 @@ def main() -> int:
     p_decode.add_argument("video_file", help="Path to the recorded video file.")
     p_decode.add_argument("-o", "--output", help="Output file path (default: embedded original filename).")
     p_decode.add_argument("--force", action="store_true", help="Overwrite output file if it already exists.")
+    p_decode.add_argument("--decoder", default="opencv",
+                           help="QR decoding backend(s) to use, comma-separated: opencv, pyzbar, "
+                                "zxing (default: opencv). Each requested backend is lazily "
+                                "imported only when selected, so e.g. the default 'opencv' never "
+                                "touches pyzbar/zxing-cpp. Multiple backends can be combined, e.g. "
+                                "--decoder pyzbar,zxing, running all of them on every frame and "
+                                "merging the results - useful when one backend misses chunks the "
+                                "other catches. 'pyzbar' needs 'pip install pyzbar' (plus its "
+                                "native zbar library, which can be unavailable in some "
+                                "locked-down/VDI environments). 'zxing' needs "
+                                "'pip install zxing-cpp' (self-contained wheel, no external "
+                                "native library to locate).")
     p_decode.set_defaults(func=cmd_decode)
 
     args = parser.parse_args()
-    return args.func(args)
+    try:
+        return args.func(args)
+    except KeyboardInterrupt:
+        print()
+        print("Interrupted (Ctrl+C).", file=sys.stderr)
+        cv2.destroyAllWindows()
+        return 130
 
 
 if __name__ == "__main__":

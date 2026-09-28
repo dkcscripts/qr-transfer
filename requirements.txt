@@ -2,3 +2,9 @@ qrcode[pil]>=7.4
 opencv-python>=4.9
 numpy>=1.26
 Pillow>=10.0
+
+# Optional decoder backends: only needed if you pass the matching
+# `qr_transfer.py decode --decoder ...` value. The default backend is
+# 'opencv', which needs none of these.
+# pyzbar>=0.1.9      # --decoder pyzbar
+# zxing-cpp>=2.2      # --decoder zxing
