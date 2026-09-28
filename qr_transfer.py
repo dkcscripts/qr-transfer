@@ -7,7 +7,7 @@ window (film it with a phone camera), and decode a video recording of that
 sequence back into the original file on another machine.
 
 Usage:
-    python qr_transfer.py encode <input_file> [--duration-ms 150] [--chunk-size 1200] [--window-size 800]
+    python qr_transfer.py encode <input_file> [--duration-ms 200] [--chunk-size 1200] [--window-size 800]
     python qr_transfer.py decode <video_file> [-o OUTPUT] [--force]
 """
 from __future__ import annotations
@@ -315,10 +315,10 @@ def main() -> int:
 
     p_encode = sub.add_parser("encode", help="Encode a file into a sequence of QR codes shown on screen.")
     p_encode.add_argument("input_file", help="Path to the file to transmit.")
-    p_encode.add_argument("--duration-ms", type=int, default=150,
-                           help="Milliseconds each QR frame stays on screen (default: 150).")
-    p_encode.add_argument("--chunk-size", type=int, default=1200,
-                           help="Bytes of file data per QR frame (default: 1200).")
+    p_encode.add_argument("--duration-ms", type=int, default=200,
+                           help="Milliseconds each QR frame stays on screen (default: 200).")
+    p_encode.add_argument("--chunk-size", type=int, default=1000,
+                           help="Bytes of file data per QR frame (default: 1000).")
     p_encode.add_argument("--window-size", type=int, default=800,
                            help="Width/height in pixels of the display window (default: 800).")
     p_encode.add_argument("--countdown", type=int, default=5,

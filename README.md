@@ -74,8 +74,8 @@ Options:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--duration-ms` | `150` | Milliseconds each QR frame is shown. Lower = faster transfer, higher = more tolerant of slower/older phone cameras. |
-| `--chunk-size` | `1200` | Bytes of file data packed into each QR frame (before base64). Larger = fewer frames but denser/harder-to-scan QR codes. |
+| `--duration-ms` | `200` | Milliseconds each QR frame is shown. Lower = faster transfer, higher = more tolerant of slower/older phone cameras. |
+| `--chunk-size` | `1000` | Bytes of file data packed into each QR frame (before base64). Larger = fewer frames but denser/harder-to-scan QR codes. |
 | `--window-size` | `800` | Width/height in pixels of the display window. |
 | `--countdown` | `5` | Seconds of numeric countdown shown after pressing Enter, before frames start. `0` disables it. |
 | `--no-wait` | off | Skip the "press ENTER to begin" screen entirely and go straight to the countdown/frames. |
