@@ -79,6 +79,7 @@ Options:
 | `--window-size` | `800` | Width/height in pixels of the display window. |
 | `--countdown` | `5` | Seconds of numeric countdown shown after pressing Enter, before frames start. `0` disables it. |
 | `--no-wait` | off | Skip the "press ENTER to begin" screen entirely and go straight to the countdown/frames. |
+| `--info` | off | Print the chunk count and expected recording length, then exit without opening a display window. |
 
 Record the window with your phone's camera for the full duration (terminal
 shows progress and a completion message when done). Press `q`/`Esc` at any

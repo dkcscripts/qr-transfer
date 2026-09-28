@@ -152,10 +152,18 @@ def cmd_encode(args: argparse.Namespace) -> int:
     for i, chunk in enumerate(chunks, start=1):
         frames.append(pack_frame(i, total_frames, FRAME_TYPE_DATA, chunk))
 
+    fps = 1000.0 / args.duration_ms
+    video_seconds = total_frames * args.duration_ms / 1000.0
+
     print(f"File: {input_path.name} ({len(data)} bytes)")
     print(f"SHA256: {file_hash}")
     print(f"Chunks: {total_chunks} (chunk_size={chunk_size}) -> {total_frames} frames total")
-    print(f"Displaying at {args.duration_ms} ms/frame ({1000.0/args.duration_ms:.1f} fps)")
+    print(f"Displaying at {args.duration_ms} ms/frame ({fps:.1f} fps)")
+    print(f"Expected recording length: ~{video_seconds:.1f}s "
+          f"({int(video_seconds // 60)}m{video_seconds % 60:04.1f}s)")
+
+    if args.info:
+        return 0
 
     window_name = "QR Transfer - Encode"
     cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
@@ -325,6 +333,9 @@ def main() -> int:
                            help="Seconds of countdown shown before the first QR frame (default: 5, 0 to disable).")
     p_encode.add_argument("--no-wait", action="store_true",
                            help="Skip the 'press ENTER to begin' screen and go straight to the countdown/frames.")
+    p_encode.add_argument("--info", action="store_true",
+                           help="Print chunk count and expected recording length, then exit "
+                                "without opening a display window.")
     p_encode.set_defaults(func=cmd_encode)
 
     p_decode = sub.add_parser("decode", help="Decode a screen recording video back into the original file.")
