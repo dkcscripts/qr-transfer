@@ -27,21 +27,21 @@ decoding the recorded video back into the original file.
   what makes the pipeline robust to timing mismatches between the display and
   the camera.
 - After transferring the video to the destination machine, the decoder scans
-  every video frame with a QR reader (pyzbar/zbar), deduplicates repeated
-  captures by frame index, verifies each chunk's CRC32, and once all chunks
-  are present, verifies the whole-file SHA256 and writes the reconstructed
-  file to disk.
+  every video frame with a QR reader (OpenCV's built-in `QRCodeDetector`),
+  deduplicates repeated captures by frame index, verifies each chunk's
+  CRC32, and once all chunks are present, verifies the whole-file SHA256 and
+  writes the reconstructed file to disk.
 - If any chunks are missing (frame flashed too fast, camera focus hiccup,
   etc.), the decoder reports exactly which chunk indices are missing and
   aborts without writing a (possibly corrupt) file. Re-record and try again,
   e.g. with a slower `--duration-ms`.
 
 Binary payloads are base64-encoded before being put into the QR code. This
-is required because `zbar` (the QR decoding library) performs its own
-internal text-encoding detection on decoded byte-mode QR data, which can
-silently corrupt arbitrary binary bytes. Base64 keeps the QR payload to a
-safe printable-ASCII subset that survives that round trip byte-for-byte, at
-the cost of ~33% size overhead.
+is required because OpenCV's QR decoder performs its own internal
+text-encoding detection on decoded byte-mode QR data, which can silently
+corrupt arbitrary binary bytes. Base64 keeps the QR payload to a safe
+printable-ASCII subset that survives that round trip byte-for-byte, at the
+cost of ~33% size overhead.
 
 ## Requirements
 
@@ -54,12 +54,8 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-`pyzbar` wheels bundle the required `zbar` shared library on Windows and
-macOS. On Linux you additionally need the system package:
-
-```bash
-sudo apt install libzbar0
-```
+No external QR-decoding system libraries are required; QR decoding uses
+OpenCV's built-in `QRCodeDetector`.
 
 ## Usage
 
@@ -78,7 +74,7 @@ Options:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--duration-ms` | `200` | Milliseconds each QR frame is shown. Lower = faster transfer, higher = more tolerant of slower/older phone cameras. |
+| `--duration-ms` | `150` | Milliseconds each QR frame is shown. Lower = faster transfer, higher = more tolerant of slower/older phone cameras. |
 | `--chunk-size` | `1200` | Bytes of file data packed into each QR frame (before base64). Larger = fewer frames but denser/harder-to-scan QR codes. |
 | `--window-size` | `800` | Width/height in pixels of the display window. |
 | `--countdown` | `5` | Seconds of numeric countdown shown after pressing Enter, before frames start. `0` disables it. |

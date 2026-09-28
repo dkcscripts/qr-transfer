@@ -1,5 +1,4 @@
 qrcode[pil]>=7.4
-pyzbar>=0.1.9
 opencv-python>=4.9
 numpy>=1.26
 Pillow>=10.0

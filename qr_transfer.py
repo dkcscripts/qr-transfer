@@ -7,7 +7,7 @@ window (film it with a phone camera), and decode a video recording of that
 sequence back into the original file on another machine.
 
 Usage:
-    python qr_transfer.py encode <input_file> [--duration-ms 200] [--chunk-size 1200] [--window-size 800]
+    python qr_transfer.py encode <input_file> [--duration-ms 150] [--chunk-size 1200] [--window-size 800]
     python qr_transfer.py decode <video_file> [-o OUTPUT] [--force]
 """
 from __future__ import annotations
@@ -28,7 +28,6 @@ import qrcode
 from qrcode.constants import ERROR_CORRECT_M
 from qrcode.util import QRData, MODE_8BIT_BYTE
 from PIL import Image
-from pyzbar.pyzbar import decode as zbar_decode, ZBarSymbol
 
 MAGIC = b"QRV1"
 FRAME_TYPE_META = 0
@@ -72,11 +71,11 @@ def unpack_frame(raw: bytes):
 # --------------------------------------------------------------------------
 
 def make_qr_image(data: bytes, window_size: int) -> np.ndarray:
-    # zbar (used on the decode side) applies its own text-encoding guessing to
-    # byte-mode QR payloads and silently corrupts arbitrary binary data as a
-    # result. Base64-encoding the payload first keeps the QR content to a safe
-    # printable-ASCII subset that survives that round trip intact, at the cost
-    # of ~33% size overhead.
+    # The QR decoder used on the decode side (OpenCV's QRCodeDetector)
+    # applies its own text-encoding guessing to byte-mode QR payloads and can
+    # silently corrupt arbitrary binary data as a result. Base64-encoding the
+    # payload first keeps the QR content to a safe printable-ASCII subset
+    # that survives that round trip intact, at the cost of ~33% size overhead.
     b64 = base64.b64encode(data)
     qr = qrcode.QRCode(error_correction=ERROR_CORRECT_M, border=4)
     qr.add_data(QRData(b64, mode=MODE_8BIT_BYTE, check_data=False))
@@ -216,6 +215,7 @@ def cmd_decode(args: argparse.Namespace) -> int:
     chunks: dict[int, bytes] = {}
     frame_num = 0
     total_video_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or None
+    qr_detector = cv2.QRCodeDetector()
 
     print(f"Scanning {video_path.name} ...")
     while True:
@@ -225,10 +225,18 @@ def cmd_decode(args: argparse.Namespace) -> int:
         frame_num += 1
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        results = zbar_decode(gray, symbols=[ZBarSymbol.QRCODE])
-        for result in results:
+        try:
+            retval, decoded_infos, _points, _straight = qr_detector.detectAndDecodeMulti(gray)
+        except cv2.error:
+            retval, decoded_infos = False, []
+        if not retval:
+            single, _points, _straight = qr_detector.detectAndDecode(gray)
+            decoded_infos = [single] if single else []
+        for text in decoded_infos:
+            if not text:
+                continue
             try:
-                raw = base64.b64decode(result.data, validate=True)
+                raw = base64.b64decode(text, validate=True)
             except (base64.binascii.Error, ValueError):
                 continue  # not one of our frames
             parsed = unpack_frame(raw)
@@ -307,8 +315,8 @@ def main() -> int:
 
     p_encode = sub.add_parser("encode", help="Encode a file into a sequence of QR codes shown on screen.")
     p_encode.add_argument("input_file", help="Path to the file to transmit.")
-    p_encode.add_argument("--duration-ms", type=int, default=200,
-                           help="Milliseconds each QR frame stays on screen (default: 200).")
+    p_encode.add_argument("--duration-ms", type=int, default=150,
+                           help="Milliseconds each QR frame stays on screen (default: 150).")
     p_encode.add_argument("--chunk-size", type=int, default=1200,
                            help="Bytes of file data per QR frame (default: 1200).")
     p_encode.add_argument("--window-size", type=int, default=800,
