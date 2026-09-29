@@ -13,7 +13,7 @@ decoding the recorded video back into the original file.
 
 ## How it works
 
-- The input file is split into small chunks (default 1200 bytes each).
+- The input file is split into small chunks (default 1000 bytes each).
 - Each chunk gets a small binary header (magic bytes, frame index, total
   frame count, frame type, CRC32 of the payload), is base64-encoded, and
   rendered as a QR code.
